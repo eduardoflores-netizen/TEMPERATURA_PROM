@@ -1,1 +1,429 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema SCADA - Monitoreo Térmico</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'tech': ['Orbitron', 'sans-serif'],
+                        'body': ['Roboto', 'sans-serif'],
+                    },
+                    colors: {
+                        metal: {
+                            900: '#0f172a',
+                            800: '#1e293b',
+                            700: '#334155',
+                        },
+                        neon: {
+                            blue: '#06b6d4',
+                            green: '#10b981',
+                            purple: '#a855f7', /* NUEVO: Color para el promedio */
+                        }
+                    }
+                }
+            }
+        }
+    </script>
 
+    <style>
+        body { font-family: 'Roboto', sans-serif; background-color: #0b1120; color: #e2e8f0; }
+        
+        /* Efecto Cristal Metálico */
+        .glass-panel {
+            background: linear-gradient(145deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95));
+            border: 1px solid rgba(6, 182, 212, 0.3);
+            box-shadow: 0 0 15px rgba(6, 182, 212, 0.1);
+            backdrop-filter: blur(5px);
+        }
+
+        /* Variante para el panel de Promedio */
+        .glass-panel-avg {
+            background: linear-gradient(145deg, rgba(40, 30, 60, 0.9), rgba(15, 23, 42, 0.95));
+            border: 1px solid rgba(168, 85, 247, 0.5); /* Borde Púrpura */
+            box-shadow: 0 0 20px rgba(168, 85, 247, 0.2);
+            backdrop-filter: blur(5px);
+        }
+
+        .btn-glow:hover {
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.6);
+        }
+
+        .tech-font { font-family: 'Orbitron', sans-serif; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]">
+
+    <header class="bg-metal-900 border-b-2 border-neon-blue shadow-lg shadow-neon-blue/20 sticky top-0 z-50">
+        <div class="container mx-auto px-4 py-3 flex flex-col md:flex-row justify-between items-center gap-4">
+            
+            <div class="flex items-center gap-4">
+                <div class="bg-metal-800 p-2 rounded border border-neon-blue/50">
+                    <i data-lucide="cpu" class="w-8 h-8 text-neon-blue"></i>
+                </div>
+                <div>
+                    <h1 class="text-2xl font-bold tracking-wider tech-font text-white">TUVN</h1>
+                    <p class="text-[10px] md:text-xs text-neon-blue font-bold tracking-[0.2em] uppercase glow-text">
+                        Automatización e Instrumentación
+                    </p>
+                </div>
+            </div>
+
+            <div class="flex flex-col items-center md:items-end font-mono text-sm">
+                <div class="flex items-center gap-2 text-slate-400">
+                    <i data-lucide="calendar" class="w-4 h-4"></i>
+                    <span id="dateDisplay">--/--/----</span>
+                </div>
+                <div class="flex items-center gap-2 text-neon-green font-bold text-lg">
+                    <i data-lucide="clock" class="w-4 h-4"></i>
+                    <span id="timeDisplay">--:--:--</span>
+                </div>
+            </div>
+
+            <div class="bg-metal-900 border border-slate-600 px-4 py-1 rounded-full flex items-center gap-2">
+                <div class="relative flex h-3 w-3">
+                  <span id="pingDot" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-neon-green opacity-75 hidden"></span>
+                  <span id="staticDot" class="relative inline-flex rounded-full h-3 w-3 bg-red-600"></span>
+                </div>
+                <span id="statusText" class="text-xs font-mono text-slate-400 uppercase">OFFLINE</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-grow container mx-auto px-4 py-8">
+        
+        <div class="text-center mb-8">
+            <h2 class="text-3xl md:text-4xl font-bold text-white tech-font mb-2">PANEL DE CONTROL TÉRMICO</h2>
+            <div class="h-1 w-32 bg-gradient-to-r from-neon-blue to-neon-green mx-auto rounded"></div>
+        </div>
+
+        <div class="mb-8 flex justify-center">
+            <div class="glass-panel-avg rounded-xl overflow-hidden w-full md:w-2/3 lg:w-1/2 group relative">
+                <div class="bg-gradient-to-r from-metal-900 to-[#2e1065] p-3 border-b border-purple-500/30 flex justify-between items-center">
+                    <h3 class="text-neon-purple font-bold tech-font tracking-wide text-lg flex items-center gap-2">
+                        <i data-lucide="zap" class="w-5 h-5"></i>
+                        PROMEDIO GENERAL DEL SISTEMA
+                    </h3>
+                    <span class="bg-neon-purple/20 text-neon-purple px-2 py-0.5 rounded text-xs font-mono border border-neon-purple/50">AVG-MAIN</span>
+                </div>
+                <div class="p-6 grid grid-cols-2 gap-4 items-center">
+                    <div>
+                        <div class="text-6xl md:text-7xl font-bold text-white tech-font drop-shadow-[0_0_10px_rgba(168,85,247,0.5)]" id="val_avg">--</div>
+                        <div class="text-slate-400 font-mono mt-1">TEMPERATURA MEDIA (°C)</div>
+                    </div>
+                    
+                    <div class="h-28 w-full bg-metal-900 rounded border border-purple-500/30 relative overflow-hidden">
+                        <canvas id="chart_avg"></canvas>
+                        <div class="absolute inset-0 bg-[linear-gradient(rgba(168,85,247,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(168,85,247,0.1)_1px,transparent_1px)] bg-[size:10px_10px] pointer-events-none"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+
+            <div class="glass-panel rounded-xl overflow-hidden group">
+                <div class="bg-gradient-to-r from-metal-800 to-metal-900 p-3 border-b border-slate-700 flex justify-between items-center">
+                    <h3 class="text-neon-blue font-bold tech-font tracking-wide">ANGAR 1</h3>
+                    <i data-lucide="thermometer" class="text-slate-500 w-5 h-5"></i>
+                </div>
+                <div class="p-4">
+                    <div class="flex justify-between items-end mb-4">
+                        <div class="text-5xl font-bold text-white tech-font" id="val1">--</div>
+                        <div class="text-slate-400 text-sm font-mono mb-2">°C</div>
+                    </div>
+                    <div class="h-24 w-full bg-metal-900 rounded border border-slate-700 relative overflow-hidden">
+                        <canvas id="chart1"></canvas>
+                        <div class="absolute inset-0 bg-[linear-gradient(rgba(6,182,212,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(6,182,212,0.1)_1px,transparent_1px)] bg-[size:10px_10px] pointer-events-none"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-panel rounded-xl overflow-hidden group">
+                <div class="bg-gradient-to-r from-metal-800 to-metal-900 p-3 border-b border-slate-700 flex justify-between items-center">
+                    <h3 class="text-neon-green font-bold tech-font tracking-wide">ANGAR 2</h3>
+                    <i data-lucide="thermometer" class="text-slate-500 w-5 h-5"></i>
+                </div>
+                <div class="p-4">
+                    <div class="flex justify-between items-end mb-4">
+                        <div class="text-5xl font-bold text-white tech-font" id="val2">--</div>
+                        <div class="text-slate-400 text-sm font-mono mb-2">°C</div>
+                    </div>
+                    <div class="h-24 w-full bg-metal-900 rounded border border-slate-700 relative overflow-hidden">
+                        <canvas id="chart2"></canvas>
+                        <div class="absolute inset-0 bg-[linear-gradient(rgba(16,185,129,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(16,185,129,0.1)_1px,transparent_1px)] bg-[size:10px_10px] pointer-events-none"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-panel rounded-xl overflow-hidden group">
+                <div class="bg-gradient-to-r from-metal-800 to-metal-900 p-3 border-b border-slate-700 flex justify-between items-center">
+                    <h3 class="text-neon-blue font-bold tech-font tracking-wide">ANGAR 3</h3>
+                    <i data-lucide="thermometer" class="text-slate-500 w-5 h-5"></i>
+                </div>
+                <div class="p-4">
+                    <div class="flex justify-between items-end mb-4">
+                        <div class="text-5xl font-bold text-white tech-font" id="val3">--</div>
+                        <div class="text-slate-400 text-sm font-mono mb-2">°C</div>
+                    </div>
+                    <div class="h-24 w-full bg-metal-900 rounded border border-slate-700 relative overflow-hidden">
+                        <canvas id="chart3"></canvas>
+                        <div class="absolute inset-0 bg-[linear-gradient(rgba(6,182,212,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(6,182,212,0.1)_1px,transparent_1px)] bg-[size:10px_10px] pointer-events-none"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-panel rounded-xl overflow-hidden group">
+                <div class="bg-gradient-to-r from-metal-800 to-metal-900 p-3 border-b border-slate-700 flex justify-between items-center">
+                    <h3 class="text-neon-green font-bold tech-font tracking-wide">ANGAR 4</h3>
+                    <i data-lucide="thermometer" class="text-slate-500 w-5 h-5"></i>
+                </div>
+                <div class="p-4">
+                    <div class="flex justify-between items-end mb-4">
+                        <div class="text-5xl font-bold text-white tech-font" id="val4">--</div>
+                        <div class="text-slate-400 text-sm font-mono mb-2">°C</div>
+                    </div>
+                    <div class="h-24 w-full bg-metal-900 rounded border border-slate-700 relative overflow-hidden">
+                        <canvas id="chart4"></canvas>
+                        <div class="absolute inset-0 bg-[linear-gradient(rgba(16,185,129,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(16,185,129,0.1)_1px,transparent_1px)] bg-[size:10px_10px] pointer-events-none"></div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="mt-12 flex justify-center">
+            <button id="connectBtn" onclick="toggleConnection()" class="btn-glow bg-metal-800 border border-neon-blue text-neon-blue hover:bg-neon-blue hover:text-black font-bold py-4 px-12 rounded-full shadow-lg flex items-center gap-3 transition-all duration-300 tech-font tracking-widest">
+                <i data-lucide="bluetooth" class="w-6 h-6"></i>
+                <span>INICIAR SISTEMA</span>
+            </button>
+        </div>
+
+    </main>
+
+    <footer class="bg-metal-900 border-t border-slate-800 py-6 mt-auto">
+        <div class="container mx-auto px-4 text-center">
+            <h4 class="text-slate-500 text-xs font-bold uppercase tracking-widest mb-3">Equipo de Desarrollo</h4>
+            <div class="flex flex-wrap justify-center gap-4 text-sm font-mono text-neon-blue">
+                <span class="bg-metal-800 px-3 py-1 rounded border border-slate-700">PALACIOS JOEY</span>
+                <span class="bg-metal-800 px-3 py-1 rounded border border-slate-700">ALVAREZ ALEJANDRO</span>
+                <span class="bg-metal-800 px-3 py-1 rounded border border-slate-700">FLORES EDUARDO</span>
+            </div>
+            <p class="text-slate-600 text-[10px] mt-6">© 2025 Instituto Superior Tecnológico Vida Nueva</p>
+        </div>
+    </footer>
+
+    <script>
+        lucide.createIcons();
+
+        // --- CONFIGURACIÓN DE GRÁFICOS (Chart.js) ---
+        const commonChartOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { display: false },
+                y: { 
+                    display: false, 
+                    min: 0, 
+                    max: 50 
+                }
+            },
+            elements: {
+                point: { radius: 0 },
+                line: { tension: 0.4, borderWidth: 2 }
+            },
+            animation: { duration: 0 }
+        };
+
+        let charts = [];
+        // AÑADIDO: 'chart_avg' al final del array de IDs
+        const ctxIds = ['chart1', 'chart2', 'chart3', 'chart4', 'chart_avg'];
+        // AÑADIDO: Color morado (#a855f7) al final para el promedio
+        const chartColors = ['#06b6d4', '#10b981', '#06b6d4', '#10b981', '#a855f7'];
+
+        function initCharts() {
+            ctxIds.forEach((id, index) => {
+                const ctx = document.getElementById(id).getContext('2d');
+                const initialData = Array(30).fill(20); 
+                
+                charts[index] = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: Array(30).fill(''),
+                        datasets: [{
+                            data: initialData,
+                            borderColor: chartColors[index],
+                            backgroundColor: chartColors[index] + '20',
+                            fill: true
+                        }]
+                    },
+                    options: commonChartOptions
+                });
+            });
+        }
+        
+        initCharts();
+
+        function updateChart(index, newValue) {
+            const chart = charts[index];
+            const data = chart.data.datasets[0].data;
+            data.push(newValue); 
+            data.shift();
+            chart.update();
+        }
+
+        // --- RELOJ ---
+        function updateClock() {
+            const now = new Date();
+            const optionsDate = { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' };
+            document.getElementById('dateDisplay').textContent = now.toLocaleDateString('es-EC', optionsDate).toUpperCase();
+            document.getElementById('timeDisplay').textContent = now.toLocaleTimeString('es-EC');
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // --- BLUETOOTH ---
+        const serviceUuid = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+        const characteristicUuid = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+        let bluetoothDevice;
+        let bleCharacteristic;
+
+        const connectBtn = document.getElementById('connectBtn');
+        const statusText = document.getElementById('statusText');
+        const pingDot = document.getElementById('pingDot');
+        const staticDot = document.getElementById('staticDot');
+        
+        // Elementos de valor (Sensores 1-4)
+        const valElements = [
+            document.getElementById('val1'),
+            document.getElementById('val2'),
+            document.getElementById('val3'),
+            document.getElementById('val4')
+        ];
+        // Referencia al elemento de Promedio
+        const valAvgElement = document.getElementById('val_avg');
+
+        async function toggleConnection() {
+            if (bluetoothDevice && bluetoothDevice.gatt.connected) {
+                disconnect();
+            } else {
+                connect();
+            }
+        }
+
+        async function connect() {
+            try {
+                connectBtn.innerHTML = '<span class="animate-spin">⌛</span> ESTABLECIENDO ENLACE...';
+                
+                bluetoothDevice = await navigator.bluetooth.requestDevice({
+                    filters: [{ name: 'TUVN_Termometros' }],
+                    optionalServices: [serviceUuid]
+                });
+
+                bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+                const server = await bluetoothDevice.gatt.connect();
+                const service = await server.getPrimaryService(serviceUuid);
+                bleCharacteristic = await service.getCharacteristic(characteristicUuid);
+
+                await bleCharacteristic.startNotifications();
+                bleCharacteristic.addEventListener('characteristicvaluechanged', handleData);
+
+                updateUIConnected();
+
+            } catch (error) {
+                console.log('Error:', error);
+                updateUIDisconnected();
+            }
+        }
+
+        function disconnect() {
+            if (bluetoothDevice && bluetoothDevice.gatt.connected) {
+                bluetoothDevice.gatt.disconnect();
+            }
+        }
+
+        function onDisconnected() {
+            updateUIDisconnected();
+        }
+
+        // --- PROCESAMIENTO DE DATOS ---
+        function handleData(event) {
+            const value = event.target.value;
+            const decoder = new TextDecoder('utf-8');
+            const jsonString = decoder.decode(value);
+
+            try {
+                // Formato esperado: {"s1":20,"s2":20,"s3":20,"s4":20,"avg":20}
+                const data = JSON.parse(jsonString);
+                const keys = ['s1', 's2', 's3', 's4'];
+
+                // 1. Actualizar Sensores Individuales
+                keys.forEach((key, index) => {
+                    if (data[key] !== undefined) {
+                        const temp = parseFloat(data[key]);
+                        valElements[index].innerText = temp.toFixed(1);
+                        updateChart(index, temp);
+                    }
+                });
+
+                // 2. Actualizar Promedio (Si existe en el JSON)
+                if (data.avg !== undefined) {
+                    const avgTemp = parseFloat(data.avg);
+                    valAvgElement.innerText = avgTemp.toFixed(1);
+                    // Actualizamos el gráfico index 4 (el del promedio)
+                    updateChart(4, avgTemp);
+                }
+
+                pingDot.classList.remove('hidden');
+                setTimeout(() => { pingDot.classList.add('hidden'); }, 200);
+
+            } catch (e) {
+                console.error("Error JSON:", e);
+            }
+        }
+
+        function updateUIConnected() {
+            connectBtn.innerHTML = 'DESCONECTAR SISTEMA';
+            connectBtn.classList.replace('border-neon-blue', 'border-red-500');
+            connectBtn.classList.replace('text-neon-blue', 'text-red-500');
+            connectBtn.classList.remove('hover:bg-neon-blue');
+            connectBtn.classList.add('hover:bg-red-900', 'hover:text-white');
+            
+            statusText.innerText = "ONLINE";
+            statusText.classList.replace('text-slate-400', 'text-neon-green');
+            staticDot.classList.replace('bg-red-600', 'bg-neon-green');
+            staticDot.classList.add('animate-pulse');
+        }
+
+        function updateUIDisconnected() {
+            connectBtn.innerHTML = '<i data-lucide="bluetooth" class="w-6 h-6"></i> INICIAR SISTEMA';
+            lucide.createIcons();
+            
+            connectBtn.classList.replace('border-red-500', 'border-neon-blue');
+            connectBtn.classList.replace('text-red-500', 'text-neon-blue');
+            connectBtn.classList.remove('hover:bg-red-900', 'hover:text-white');
+            connectBtn.classList.add('hover:bg-neon-blue', 'hover:text-black');
+
+            statusText.innerText = "OFFLINE";
+            statusText.classList.replace('text-neon-green', 'text-slate-400');
+            staticDot.classList.replace('bg-neon-green', 'bg-red-600');
+            staticDot.classList.remove('animate-pulse');
+            pingDot.classList.add('hidden');
+
+            valElements.forEach(el => el.innerText = "--");
+            valAvgElement.innerText = "--";
+        }
+    </script>
+</body>
+</html>
